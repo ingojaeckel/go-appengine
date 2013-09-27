@@ -8,10 +8,48 @@ import (
 )
 
 func init() {
-	http.HandleFunc("/", hello)
+	http.HandleFunc("/hello", hello)
 	http.HandleFunc("/no/content", noContent)
 	http.HandleFunc("/no/content/cache", noContentCache)
 	http.HandleFunc("/hits", showHits)
+	http.HandleFunc("/state/init", initState)
+	http.HandleFunc("/state/get", getState)
+}
+
+type LeaderboardEntry struct {
+	player string
+	value int
+}
+
+type Leaderboard struct {
+	entries []LeaderboardEntry
+}
+
+type State struct {
+	a,b,c,d int
+	state string
+}
+
+func initState(w http.ResponseWriter, r *http.Request) {
+        c := appengine.NewContext(r)
+
+	var in struct {I int;}
+	in.I = 23
+	item := &memcache.Item {
+		Key: "s",
+		Object: in,
+	}
+	memcache.JSON.Set(c, item)
+	
+	w.WriteHeader(204)
+}
+
+func getState(w http.ResponseWriter, r *http.Request) {
+        c := appengine.NewContext(r)
+
+	var out struct {I int;}
+	memcache.JSON.Get(c, "s", &out)
+	fmt.Fprint(w, out)
 }
 
 func noContent(w http.ResponseWriter, r *http.Request) {
