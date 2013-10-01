@@ -25,6 +25,8 @@ func init() {
 	r.HandleFunc("/rest/state/init", initState)
 	r.HandleFunc("/rest/state/get", getState)
 	r.HandleFunc("/rest/json", getJson)
+	r.HandleFunc("/rest/put", memcachePut)
+	r.HandleFunc("/rest/read", memcacheRead)
 
 	http.Handle("/", r)
 }
@@ -132,6 +134,29 @@ func getJson(w http.ResponseWriter, r *http.Request) {
 
 	bytes, _ := json.Marshal(s)
 	fmt.Fprint(w, string(bytes))
+}
+
+func memcachePut(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+	memcache.JSON.Set(c, &memcache.Item{Key: "key1", Object: "Value"})
+	memcache.JSON.Set(c, &memcache.Item{Key: "key2", Object: int(23)})
+
+	w.WriteHeader(204)
+}
+
+func memcacheRead(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+
+	var value1 string
+	var value2 int
+
+	memcache.JSON.Get(c, "key1", &value1)
+	memcache.JSON.Get(c, "key2", &value2)
+
+	b1, _ := json.Marshal(value1)
+	fmt.Fprintf(w, string(b1))
+	b2, _ := json.Marshal(value2)
+	fmt.Fprintf(w, string(b2));
 }
 
 func getCoordinates(r * http.Request, key string) (int, int) {
