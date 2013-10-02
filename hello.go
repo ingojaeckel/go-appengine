@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"appengine/memcache"
 	"fmt"
-	"strings"
 	"net/http"
 	"strconv"
 	"code.google.com/p/go-uuid/uuid"
@@ -67,17 +66,23 @@ func move(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
+type State struct {
+	Players []Player 
+}
+
+type Player struct {
+	ID, Name string
+	P Position
+}
+
 type Position struct {
 	X,Y int
 }
 
-type State struct {
-	Count int
-	Player1, Player2 Position
-}
-
 func getJson(w http.ResponseWriter, r *http.Request) {
-	s := State{23, Position{1,2}, Position{3,4}}
+	players := make([]Player, 1)
+	players[0] = Player{"uuid", "name", Position{1,2}}
+	s := State{players}
 
 	bytes, _ := json.Marshal(s)
 	fmt.Fprint(w, string(bytes))
@@ -106,7 +111,38 @@ func memcacheRead(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, string(b2));
 }
 
-func getCoordinates(r * http.Request, key string) Position {
+func poll(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+	
+	var playerCount int
+	
+	memcache.JSON.Get(c, "playerCount", &playerCount)
+
+	var players []Player
+
+	switch playerCount {
+		case 0:
+			players = []Player{}
+		case 1:
+			players = []Player{getPlayer(r, "player1")}
+		default:
+			players = make([]Player, playerCount)
+			for i := 0; i < playerCount; i++ {
+				key := fmt.Sprintf("player%d", i+1)
+				c.Warningf("key = %s", key)
+				players[i] = getPlayer(r, key)
+			}
+	}
+
+	b, _ := json.Marshal(players)
+	c.Warningf("players %s", string(b))
+
+	s := State{players}
+	bytes, _ := json.Marshal(s)
+	fmt.Fprintf(w, string(bytes))
+}
+
+func getPlayer(r * http.Request, key string) Player {
 	c := appengine.NewContext(r)
 
 	var uuid string
@@ -121,39 +157,7 @@ func getCoordinates(r * http.Request, key string) Position {
 
 	memcache.JSON.Get(c, posKey, &pos)
 
-	return pos
+	return Player{uuid, key, pos}
 }
 
-func poll(w http.ResponseWriter, r *http.Request) {
-	c := appengine.NewContext(r)
-	
-	var playerCount int
-	
-	memcache.JSON.Get(c, "playerCount", &playerCount)
-
-	if 1 == playerCount {
-		pos := getCoordinates(r, "player1")
-		s := State{1, pos, Position{0,0}}
-
-		bytes, _ := json.Marshal(s)
-		fmt.Fprintf(w, string(bytes))
-	} else {
-		pos1 := getCoordinates(r, "player1")
-		pos2 := getCoordinates(r, "player1")
-
-		s := State{2, pos1, pos2}
-		bytes, _ := json.Marshal(s)
-		fmt.Fprintf(w, string(bytes))
-	}
-}
-
-func getPosition(value string) Position {
-	fmt.Printf("value = %s", value)
-	parts := strings.Split(value, " ")
-	fmt.Printf("len %d", len(parts))
-	x, _ := strconv.Atoi(parts[0])
-	y, _ := strconv.Atoi(parts[1])
-
-	return Position{x, y}
-}
 
