@@ -17,9 +17,6 @@ func init() {
 	r.HandleFunc("/rest/join", join)
 	r.HandleFunc("/rest/poll", poll)
 	r.HandleFunc("/rest/move/{uuid}/{x:[0-9]+}/{y:[0-9]+}", move)
-	r.HandleFunc("/rest/json", getJson)
-	r.HandleFunc("/rest/put", memcachePut)
-	r.HandleFunc("/rest/read", memcacheRead)
 
 	http.Handle("/", r)
 }
@@ -77,38 +74,6 @@ type Player struct {
 
 type Position struct {
 	X,Y int
-}
-
-func getJson(w http.ResponseWriter, r *http.Request) {
-	players := make([]Player, 1)
-	players[0] = Player{"uuid", "name", Position{1,2}}
-	s := State{players}
-
-	bytes, _ := json.Marshal(s)
-	fmt.Fprint(w, string(bytes))
-}
-
-func memcachePut(w http.ResponseWriter, r *http.Request) {
-	c := appengine.NewContext(r)
-	memcache.JSON.Set(c, &memcache.Item{Key: "key1", Object: "Value"})
-	memcache.JSON.Set(c, &memcache.Item{Key: "key2", Object: int(23)})
-
-	w.WriteHeader(204)
-}
-
-func memcacheRead(w http.ResponseWriter, r *http.Request) {
-	c := appengine.NewContext(r)
-
-	var value1 string
-	var value2 int
-
-	memcache.JSON.Get(c, "key1", &value1)
-	memcache.JSON.Get(c, "key2", &value2)
-
-	b1, _ := json.Marshal(value1)
-	fmt.Fprintf(w, string(b1))
-	b2, _ := json.Marshal(value2)
-	fmt.Fprintf(w, string(b2));
 }
 
 func poll(w http.ResponseWriter, r *http.Request) {
