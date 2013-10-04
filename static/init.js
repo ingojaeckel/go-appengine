@@ -1,19 +1,9 @@
+var uuid = 0;
+var circle = null;
+var model = {}; // maps UUIDs to player data
+var view = {};  // maps UUIDS to UI elements
+
 $(function() {
-	$("#joinBtn").button().click(function(event) {
-		$.ajax({
-			url: "/rest/join",
-			success: function(response) {
-				console.log(response)
-				uuid = response;
-			}
-		});
-	});
-	$("#moveBtn").button().click(function(event) {
-		$.ajax({
-			url: "/rest/move/" + uuid + "/101/101"
-		});
-	});
-	
 	var stage = new Kinetic.Stage({
 		container: 'container',
 		width: 600,
@@ -42,19 +32,41 @@ $(function() {
 		fill: 'green'
 	});
 
-	var circle1 = new Kinetic.Circle({
-		x: 100,
-		y: 100,
-		radius: 10,
-		fill: 'red',
-		stroke: 'black',
-		strokeWidth: 2
-	});
-
-	layer.add(circle1);
-	registerKeyEvents(move, circle1);
-	
 	stage.add(layer);
+
+	$("#joinBtn").button().click(function(event) {
+		$.ajax({
+			url: "/rest/join",
+			dataType: "json",
+			success: function(response) {
+				circle = new Kinetic.Circle({
+					x: 100,
+					y: 100,
+					radius: 10,
+					fill: 'red',
+					stroke: 'black',
+					strokeWidth: 2
+				});
+			
+				layer.add(circle);
+				layer.draw();
+				
+				uuid = response.UUID;
+				
+				registerKeyEvents(move, circle);
+				setupChannelApi(response.ChannelToken);
+				// pollInTheBackground(layer);
+			}
+		});
+	});
+	$("#moveBtn").button().click(function(event) {
+		$.ajax({
+			url: "/rest/move/" + uuid + "/150/150"
+		});
+	});
+	$("#pollBtn").button().click(function(event) {
+		poll(layer);
+	});
 
 	// f(circle1, stage, layer, 1);
 });

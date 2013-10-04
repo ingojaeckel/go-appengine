@@ -1,96 +1,3 @@
-var uuid = 0;
-
-function f(circle1, stage, layer, speed) {
-	var initialDirection = "r";
-	var direction = initialDirection;
-	const b = 20; // size of the border
-	var anim1 = new Kinetic.Animation(function(frame) {
-		if ("r" == direction) {
-			var canContinue = (circle1.getX() + b < stage.getWidth());
-
-			if (canContinue) {
-				circle1.setX(circle1.getX() + 1 * speed);
-				return;
-			}
-
-			if (circle1.getY() + b < stage.getHeight()) {
-				direction = "d";
-				circle1.setY(circle1.getY() + 1 * speed);
-			} else if (circle1.getX() - b > 0) {
-				direction = "l";
-				circle1.setX(circle1.getX() - 1 * speed);
-			} else if (circle1.getY() - b > 0) {
-				direction = "u";
-				circle1.setY(circle1.getY() - 1 * speed);
-			} else {
-				console.debug("stuck");
-			}
-		} else if ("d" == direction) {
-			var canContinue = (circle1.getY() + b < stage.getHeight());
-
-			if (canContinue) {
-				circle1.setY(circle1.getY() + 1 * speed);
-				return;
-			}
-
-			if (circle1.getX() - b > 0) {
-				direction = "l";
-				circle1.setX(circle1.getX() - 1 * speed);
-			} else if (circle1.getY() - b > 0) {
-				direction = "u";
-				circle1.setY(circle1.getY() - 1 * speed);
-			} else if (circle1.getX() + b < stage.getWidth()) {
-				direction = "r";
-				circle1.setX(circle1.getX() + 1 * speed);
-			} else {
-				console.debug("stuck");
-			}
-		} else if ("l" == direction) {
-			var canContinue = (circle1.getX() - b > 0);
-
-			if (canContinue) {
-				circle1.setX(circle1.getX() - 1 * speed);
-				return;
-			}
-
-			if (circle1.getY() - b > 0) {
-				direction = "u";
-				circle1.setY(circle1.getY() - 1 * speed);
-			} else if (circle1.getX() + b < stage.getWidth()) {
-				direction = "r";
-				circle1.setX(circle1.getX() + 1 * speed);
-			} else if (circle1.getY() - b > 0) {
-				direction = "u";
-				circle1.setY(circle1.getY() - 1 * speed);
-			} else {
-				console.debug("stuck");
-			}
-		} else if ("u" == direction) {
-			var canContinue = (circle1.getY() - b > 0);
-
-			if (canContinue) {
-				circle1.setY(circle1.getY() - 1 * speed);
-				return;
-			}
-
-			if (circle1.getX() + b < stage.getWidth()) {
-				direction = "r";
-				circle1.setX(circle1.getX() + 1 * speed);
-			} else if (circle1.getY() + b > 0) {
-				direction = "d";
-				circle1.setY(circle1.getY() + 1 * speed);
-			} else if (circle1.getX() - b > 0) {
-				direction = "l";
-				circle1.setX(circle1.getX() - 1 * speed);
-			} else {
-				console.debug("stuck");
-			}
-		}
-	}, layer);
-
-	anim1.start();
-}
-
 function move(circle, direction) {
 	const speed = 5.0;
 	
@@ -127,3 +34,72 @@ function registerKeyEvents(moveFn, circle) {
 		}
 	});
 }
+
+function pollInTheBackground(layer) {
+	// console.log("pollInTheBackground");
+	
+	setTimeout(function() {
+		poll(layer);
+		pollInTheBackground(layer);
+	}, 200);
+}
+
+function poll(layer) {
+	// console.log("poll");
+	$.ajax({
+		url: "/rest/poll",
+		dataType: "json",
+		success: function(response) {
+			for (var i=0; i<response.Players.length; i++) {
+				if (uuid == response.Players[i].ID) {
+					continue; // don't draw yourself
+				}
+				
+				// Create/Update model for this player
+				model[response.Players[i].ID] = response.Players[i];
+				
+				if (view[response.Players[i].ID]) {
+					// We alreay know this player. Update view.
+					view[response.Players[i].ID].setX(response.Players[i].P.X);
+					view[response.Players[i].ID].setY(response.Players[i].P.Y);
+					// console.log("updated player " + response.Players[i].ID);
+				} else {
+					// We don't know this player yet. Create view.
+					var newCircle = new Kinetic.Circle({
+						x: response.Players[i].P.X,
+						y: response.Players[i].P.Y,
+						radius: 10,
+						fill: 'black',
+						stroke: 'black',
+						strokeWidth: 2
+					});
+					view[response.Players[i].ID] = newCircle;
+					layer.add(newCircle);
+					// console.log("created player " + response.Players[i].ID);						
+				}
+			}
+			layer.draw();
+		}
+	});
+}
+
+function setupChannelApi(token) {
+	console.log("setupChannelApi " + token);
+	var c = new goog.appengine.Channel(token);
+	var s = c.open({
+		onopen: function(a) {
+			console.log("opened");
+		},
+		onmessage: function(a) {
+			console.log("message");			
+		},
+		onerror: function(a) {
+			console.log("error");
+		},
+		onclose: function(a) {
+			console.log("closed");
+		}
+	});
+}
+
+
