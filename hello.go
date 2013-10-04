@@ -2,8 +2,9 @@ package hello
 
 import (
 	"appengine"
-	"encoding/json"
 	"appengine/memcache"
+	"appengine/channel"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -19,6 +20,11 @@ func init() {
 	r.HandleFunc("/rest/move/{uuid}/{x:[0-9]+}/{y:[0-9]+}", move)
 
 	http.Handle("/", r)
+}
+
+func getChannelToken(c appengine.Context, uuid string) string {
+	token, _ := channel.Create(c, uuid)
+	return token
 }
 
 func join(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +47,8 @@ func join(w http.ResponseWriter, r *http.Request) {
 		Object: Position{100, 100},
 	})
 
-	fmt.Fprintf(w, uuid)
+	bytes, _ := json.Marshal(JoinResponse{uuid, getChannelToken(c, uuid)})
+	fmt.Fprintf(w, string(bytes))
 }
 
 func move(w http.ResponseWriter, r *http.Request) {
@@ -54,11 +61,20 @@ func move(w http.ResponseWriter, r *http.Request) {
 	
 	posKey := fmt.Sprintf("%v.pos", uuid)
 	c.Warningf("Pos key %s", posKey)
-
 	memcache.JSON.Set(c, &memcache.Item {
 		Key: posKey,
 		Object: Position{x,y},
 	})
+	updatedPlayer := Player{uuid, "?", Position{x,y}}
+
+	var playerCount int
+	memcache.JSON.Get(c, "playerCount", &playerCount)
+
+	for i := 0; i < playerCount; i++ {
+		key := fmt.Sprintf("player%d", i+1)
+		c.Warningf("sending updated player to %s", key)
+		channel.SendJSON(c, key, updatedPlayer)
+	}
 
 	w.WriteHeader(204)
 }
@@ -74,6 +90,10 @@ type Player struct {
 
 type Position struct {
 	X,Y int
+}
+
+type JoinResponse struct {
+	UUID, ChannelToken string
 }
 
 func poll(w http.ResponseWriter, r *http.Request) {
