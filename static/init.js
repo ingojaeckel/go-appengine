@@ -2,6 +2,10 @@ var uuid = 0;
 var circle = null;
 var model = {}; // maps UUIDs to player data
 var view = {};  // maps UUIDS to UI elements
+var moves = 0;
+// Every moveThreshold-th move will be sent to the server.
+// Set to 1 to send each move to the server or higher than 1 to skip moves.
+var moveThreshold = 2;
 
 $(function() {
 	var stage = new Kinetic.Stage({
@@ -22,51 +26,28 @@ $(function() {
 
 	// add the shape to the layer
 	layer.add(rect);
-
-	var simpleText1 = new Kinetic.Text({
-		x: 5,
-		y: stage.getHeight() - 45,
-		text: '[1] Player1: 10',
-		fontSize: 12,
-		fontFamily: 'Calibri',
-		fill: 'green'
-	});
-
 	stage.add(layer);
 
-	$("#joinBtn").button().click(function(event) {
-		$.ajax({
-			url: "/rest/join",
-			dataType: "json",
-			success: function(response) {
-				circle = new Kinetic.Circle({
-					x: 100,
-					y: 100,
-					radius: 10,
-					fill: 'red',
-					stroke: 'black',
-					strokeWidth: 2
-				});
+	$.ajax({
+		url: "/rest/join",
+		dataType: "json",
+		success: function(response) {
+			circle = new Kinetic.Circle({
+				x: 100,
+				y: 100,
+				radius: 10,
+				fill: 'red',
+				stroke: 'black',
+				strokeWidth: 2
+			});
 			
-				layer.add(circle);
-				layer.draw();
+			layer.add(circle);
+			layer.draw();
 				
-				uuid = response.UUID;
+			uuid = response.UUID;
 				
-				registerKeyEvents(move, circle);
-				setupChannelApi(response.ChannelToken, layer);
-				// pollInTheBackground(layer);
-			}
-		});
+			registerKeyEvents(move, circle);
+			setupChannelApi(response.ChannelToken, layer);
+		}
 	});
-	$("#moveBtn").button().click(function(event) {
-		$.ajax({
-			url: "/rest/move/" + uuid + "/150/150"
-		});
-	});
-	$("#pollBtn").button().click(function(event) {
-		poll(layer);
-	});
-
-	// f(circle1, stage, layer, 1);
 });

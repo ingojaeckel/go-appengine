@@ -1,4 +1,8 @@
 function move(circle, direction) {
+	if (moves++ % moveThreshold != 0) {
+		return; // skip this move
+	}
+	
 	const speed = 5.0;
 	
 	if ("r" == direction) {
