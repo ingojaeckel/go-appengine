@@ -54,7 +54,7 @@ $(function() {
 				uuid = response.UUID;
 				
 				registerKeyEvents(move, circle);
-				setupChannelApi(response.ChannelToken);
+				setupChannelApi(response.ChannelToken, layer);
 				// pollInTheBackground(layer);
 			}
 		});

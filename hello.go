@@ -15,6 +15,8 @@ import (
 func init() {
 	r := mux.NewRouter()
 
+	r.HandleFunc("/rest/create", create)
+	r.HandleFunc("/rest/send", send)
 	r.HandleFunc("/rest/join", join)
 	r.HandleFunc("/rest/poll", poll)
 	r.HandleFunc("/rest/move/{uuid}/{x:[0-9]+}/{y:[0-9]+}", move)
@@ -24,7 +26,27 @@ func init() {
 
 func getChannelToken(c appengine.Context, uuid string) string {
 	token, _ := channel.Create(c, uuid)
+	c.Warningf("createChannel(%s) -> %s", uuid, token)
 	return token
+}
+
+func create(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+	token, err := channel.Create(c, "player")
+	if err != nil {
+		c.Warningf("e = %s", err)
+	}
+	c.Warningf("createChannel(%s) -> %s", "player", token)
+	fmt.Fprintf(w, token)
+}
+
+func send(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+	err := channel.Send(c, "player", "message")
+	if err != nil {
+		c.Warningf("e = %s", err)
+	}
+	w.WriteHeader(204)
 }
 
 func join(w http.ResponseWriter, r *http.Request) {
@@ -34,9 +56,6 @@ func join(w http.ResponseWriter, r *http.Request) {
 
 	uuidKey := fmt.Sprintf("player%d", playerCount)
 	posKey := fmt.Sprintf("%v.pos", uuid)
-	c.Warningf("playerCount %d", playerCount)
-	c.Warningf("UUID Key %s", uuidKey)
-	c.Warningf("Pos key %s", posKey)
 
 	memcache.JSON.Set(c, &memcache.Item {
 		Key: uuidKey,
@@ -47,7 +66,7 @@ func join(w http.ResponseWriter, r *http.Request) {
 		Object: Position{100, 100},
 	})
 
-	bytes, _ := json.Marshal(JoinResponse{uuid, getChannelToken(c, uuid)})
+	bytes, _ := json.Marshal(JoinResponse{uuid, getChannelToken(c, uuidKey)})
 	fmt.Fprintf(w, string(bytes))
 }
 
@@ -60,7 +79,6 @@ func move(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
 	
 	posKey := fmt.Sprintf("%v.pos", uuid)
-	c.Warningf("Pos key %s", posKey)
 	memcache.JSON.Set(c, &memcache.Item {
 		Key: posKey,
 		Object: Position{x,y},
@@ -72,8 +90,10 @@ func move(w http.ResponseWriter, r *http.Request) {
 
 	for i := 0; i < playerCount; i++ {
 		key := fmt.Sprintf("player%d", i+1)
-		c.Warningf("sending updated player to %s", key)
-		channel.SendJSON(c, key, updatedPlayer)
+		e := channel.SendJSON(c, key, updatedPlayer)
+		if e != nil {
+			c.Warningf("Error while sending channel message %s", e)
+		}
 	}
 
 	w.WriteHeader(204)

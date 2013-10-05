@@ -83,20 +83,50 @@ function poll(layer) {
 	});
 }
 
-function setupChannelApi(token) {
+function setupChannelApi(token, layer) {
 	console.log("setupChannelApi " + token);
-	var c = new goog.appengine.Channel(token);
-	var s = c.open({
-		onopen: function(a) {
+	var channel = new goog.appengine.Channel(token);
+	channel.open({
+		'onopen': function() {
 			console.log("opened");
 		},
-		onmessage: function(a) {
-			console.log("message");			
+		'onmessage': function(message) {
+			var p = JSON.parse(message.data);
+			
+			if (uuid == p.ID) {
+				return; // don't draw yourself
+			}
+			
+			// Create/Update model for this player
+			model[p.ID] = p;
+			
+			if (view[p.ID]) {
+				// We alreay know this player. Update view.
+				view[p.ID].setX(p.P.X);
+				view[p.ID].setY(p.P.Y);
+				// console.log("updated player " + p.ID);
+			} else {
+				// We don't know this player yet. Create view.
+				var newCircle = new Kinetic.Circle({
+					x: p.P.X,
+					y: p.P.Y,
+					radius: 10,
+					fill: 'black',
+					stroke: 'black',
+					strokeWidth: 2
+				});
+				view[p.ID] = newCircle;
+				layer.add(newCircle);
+				// console.log("created player " + p.ID);						
+			}
+			
+			layer.draw();
+			// console.log("message " + message);			
 		},
-		onerror: function(a) {
+		'onerror': function(error) {
 			console.log("error");
 		},
-		onclose: function(a) {
+		'onclose': function() {
 			console.log("closed");
 		}
 	});
