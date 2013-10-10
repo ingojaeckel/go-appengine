@@ -12,6 +12,30 @@ import (
 	"github.com/gorilla/mux"
 )
 
+type NotifyRequest struct {
+	ID string
+	X,Y int
+	Recipients []string
+}
+
+type State struct {
+	Players []Player 
+}
+
+type Player struct {
+	ID, Name string
+	P Position
+}
+
+type Position struct {
+	X,Y int
+}
+
+type JoinResponse struct {
+	UUID, ChannelToken string
+	Players []Player
+}
+
 func init() {
 	r := mux.NewRouter()
 
@@ -111,6 +135,7 @@ func join(w http.ResponseWriter, r *http.Request) {
 	bytes, _ := json.Marshal(JoinResponse{uuid, getChannelToken(c, uuidKey), players})
 	fmt.Fprintf(w, string(bytes))
 }
+
 func move(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
 
@@ -161,31 +186,6 @@ func notify(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(204)
 }
-
-type NotifyRequest struct {
-	ID string
-	X,Y int
-	Recipients []string
-}
-
-type State struct {
-	Players []Player 
-}
-
-type Player struct {
-	ID, Name string
-	P Position
-}
-
-type Position struct {
-	X,Y int
-}
-
-type JoinResponse struct {
-	UUID, ChannelToken string
-	Players []Player
-}
-
 func poll(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
 	
