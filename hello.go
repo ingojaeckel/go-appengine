@@ -36,9 +36,16 @@ type JoinResponse struct {
 	Players []Player
 }
 
+type PlayerList struct {
+	Players []Player
+}
+
 func init() {
 	r := mux.NewRouter()
 
+	r.HandleFunc("/rest/players/add/{id}/{name}/", playersAdd)
+	r.HandleFunc("/rest/players/del/{id}/", playersDelete)
+	r.HandleFunc("/rest/players", playersGet)
 	r.HandleFunc("/rest/create", create)
 	r.HandleFunc("/rest/send", send)
 	r.HandleFunc("/rest/join", join)
@@ -57,12 +64,117 @@ func getChannelToken(c appengine.Context, uuid string) string {
 	return token
 }
 
+func playersAdd(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+
+	vars := mux.Vars(r)
+	id := vars["id"]
+	name := vars["name"]
+
+	var playerList PlayerList
+	memcache.JSON.Get(c, "players", &playerList)
+	playerExists := false
+	
+	newList := make([]Player, len(playerList.Players)+1)
+	for i:=0; i<len(playerList.Players); i++ {
+		if playerList.Players[i].ID == id {
+			// This player is already in the list.
+			// Don't modify the list at all to avoid re-adding the user.
+			playerExists = true
+			break
+		}
+		newList[i] = playerList.Players[i];
+	}
+
+	if playerExists {
+		// just send current list to the client
+		bytes, _ := json.Marshal(playerList)
+		fmt.Fprintf(w, string(bytes))
+	} else {
+		newList[len(playerList.Players)] = Player{id,name,Position{0,0}}
+
+		memcache.JSON.Set(c, &memcache.Item {
+			Key: "players",
+			Object: PlayerList{newList},
+		});
+
+		bytes, _ := json.Marshal(PlayerList{newList})
+		fmt.Fprintf(w, string(bytes))
+	}
+}
+
+func playersDelete(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var playerList PlayerList
+	_, e := memcache.JSON.Get(c, "players", &playerList)
+	response := playerList
+
+	if e != nil || len(playerList.Players) == 0 {
+		// reply with empty list	
+		response = PlayerList{[]Player{}}
+	}
+
+	index := indexOf(playerList.Players, id)
+	playerExists := index >= 0
+
+	if playerExists {
+		newList := make([]Player, len(playerList.Players) - 1)
+
+		// create a new players list but skip the player that should be deleted
+		k := 0
+		for i:=0; i<len(playerList.Players); i++ {
+			if i == index {
+				continue
+			}
+			newList[k] = playerList.Players[i]
+			k++
+		}
+		response = PlayerList{newList}
+
+		// Update memcache
+		memcache.JSON.Set(c, &memcache.Item{
+			Key: "players",
+			Object: response,
+		});
+	}
+
+	bytes, _ := json.Marshal(response)
+	fmt.Fprintf(w, string(bytes))
+}
+
+// Returns the position of the player with the given ID in the players array. Or -1 if no player with this ID was found.
+func indexOf(players []Player, id string) int {
+	for i:=0; i<len(players); i++ {
+		if players[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func playersGet(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+
+	var playerList PlayerList
+	_, b := memcache.JSON.Get(c, "players", &playerList)
+	if b != nil {
+		c.Warningf("b = %s", b)
+		playerList = PlayerList{[]Player{}}
+	}
+	bytes, _ := json.Marshal(playerList)
+	fmt.Fprintf(w, string(bytes))
+}
+
 func connected(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
 	clientId := r.FormValue("from")
 
 	var playerCount int
 	memcache.JSON.Get(c, "playerCount", &playerCount)
+	// no need to increase the player count - it was already increased in /join 
 	newPlayer := fmt.Sprintf("[0, \"%s\"]", clientId) // 0 == add player
 
 	for i:=0; i<playerCount; i++ {
@@ -79,6 +191,7 @@ func disconnected(w http.ResponseWriter, r *http.Request) {
 	
 	var playerCount int
 	memcache.JSON.Get(c, "playerCount", &playerCount)
+	// TODO decrease player count after disconnect
 	newPlayer := fmt.Sprintf("[1, \"%s\"]", clientId) // 1 == remove player
 
 	for i:=0; i<playerCount; i++ {
