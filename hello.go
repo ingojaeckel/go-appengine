@@ -19,7 +19,10 @@ func init() {
 	r.HandleFunc("/rest/send", send)
 	r.HandleFunc("/rest/join", join)
 	r.HandleFunc("/rest/poll", poll)
-	r.HandleFunc("/rest/move/{uuid}/{x:[0-9]+}/{y:[0-9]+}", move)
+	r.HandleFunc("/_ah/channel/connected/", connected)
+	r.HandleFunc("/_ah/channel/disconnected/", disconnected)
+	r.HandleFunc("/rest/move/{uuid}/{x:[0-9]+}/{y:[0-9]+}/", move)
+	r.HandleFunc("/rest/notify", notify)
 
 	http.Handle("/", r)
 }
@@ -28,6 +31,38 @@ func getChannelToken(c appengine.Context, uuid string) string {
 	token, _ := channel.Create(c, uuid)
 	c.Warningf("createChannel(%s) -> %s", uuid, token)
 	return token
+}
+
+func connected(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+	clientId := r.FormValue("from")
+
+	var playerCount int
+	memcache.JSON.Get(c, "playerCount", &playerCount)
+	newPlayer := fmt.Sprintf("[0, \"%s\"]", clientId) // 0 == add player
+
+	for i:=0; i<playerCount; i++ {
+		key := fmt.Sprintf("player%d", i+1)
+		channel.Send(c, key, newPlayer)
+	}
+
+	w.WriteHeader(204)
+}
+
+func disconnected(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+	clientId := r.FormValue("from")
+	
+	var playerCount int
+	memcache.JSON.Get(c, "playerCount", &playerCount)
+	newPlayer := fmt.Sprintf("[1, \"%s\"]", clientId) // 1 == remove player
+
+	for i:=0; i<playerCount; i++ {
+		key := fmt.Sprintf("player%d", i+1)
+		channel.Send(c, key, newPlayer)
+	}
+
+	w.WriteHeader(204)
 }
 
 func create(w http.ResponseWriter, r *http.Request) {
@@ -54,8 +89,8 @@ func join(w http.ResponseWriter, r *http.Request) {
 	playerCount, _ := memcache.Increment(c, "playerCount", 1, 0)
 	uuid := uuid.New()
 
-	uuidKey := fmt.Sprintf("player%d", playerCount)
 	posKey := fmt.Sprintf("%v.pos", uuid)
+	uuidKey := fmt.Sprintf("player%d", playerCount)
 
 	memcache.JSON.Set(c, &memcache.Item {
 		Key: uuidKey,
@@ -66,37 +101,71 @@ func join(w http.ResponseWriter, r *http.Request) {
 		Object: Position{100, 100},
 	})
 
-	bytes, _ := json.Marshal(JoinResponse{uuid, getChannelToken(c, uuidKey)})
+	players := make([]Player, playerCount - 1)
+
+	for i := 0; i < int(playerCount) - 1; i++ {
+		key := fmt.Sprintf("player%d", i+1)
+		players[i] = getPlayer(r, key)
+	}
+
+	bytes, _ := json.Marshal(JoinResponse{uuid, getChannelToken(c, uuidKey), players})
 	fmt.Fprintf(w, string(bytes))
 }
-
 func move(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+
 	vars := mux.Vars(r)
 	uuid := vars["uuid"]
 	x, _ := strconv.Atoi(vars["x"])
 	y, _ := strconv.Atoi(vars["y"])
-
-	c := appengine.NewContext(r)
 	
 	posKey := fmt.Sprintf("%v.pos", uuid)
 	memcache.JSON.Set(c, &memcache.Item {
 		Key: posKey,
 		Object: Position{x,y},
 	})
-	updatedPlayer := Player{uuid, "?", Position{x,y}}
+	updatedPlayer := fmt.Sprintf("[\"%s\",%d,%d]", uuid, x, y)
 
 	var playerCount int
 	memcache.JSON.Get(c, "playerCount", &playerCount)
 
 	for i := 0; i < playerCount; i++ {
 		key := fmt.Sprintf("player%d", i+1)
-		e := channel.SendJSON(c, key, updatedPlayer)
-		if e != nil {
-			c.Warningf("Error while sending channel message %s", e)
-		}
+		channel.Send(c, key, updatedPlayer)
 	}
 
 	w.WriteHeader(204)
+}
+
+func parseNotifyRequest(r *http.Request) NotifyRequest {
+	decoder := json.NewDecoder(r.Body)
+	var notifyRequest NotifyRequest
+
+	if e := decoder.Decode(&notifyRequest); e != nil {
+		c := appengine.NewContext(r)
+		c.Warningf("Error decoding request %s", e)
+	}
+
+	return notifyRequest
+}
+
+func notify(w http.ResponseWriter, r *http.Request) {
+	notifyRequest := parseNotifyRequest(r)
+	updatedPlayer := fmt.Sprintf("[\"%s\",%d,%d]", notifyRequest.ID, notifyRequest.X, notifyRequest.Y)
+	c := appengine.NewContext(r)
+
+	for i := 0; i < len(notifyRequest.Recipients); i++ {
+		c.Warningf("send('%s', '%s') [%d/%d]", notifyRequest.Recipients[i], updatedPlayer, i, len(notifyRequest.Recipients))
+		channel.Send(c, notifyRequest.Recipients[i], updatedPlayer)
+	}
+
+	w.WriteHeader(204)
+}
+
+type NotifyRequest struct {
+	ID string
+	X,Y int
+	Recipients []string
 }
 
 type State struct {
@@ -114,6 +183,7 @@ type Position struct {
 
 type JoinResponse struct {
 	UUID, ChannelToken string
+	Players []Player
 }
 
 func poll(w http.ResponseWriter, r *http.Request) {
@@ -154,9 +224,6 @@ func getPlayer(r * http.Request, key string) Player {
 	memcache.JSON.Get(c, key, &uuid)
 
 	posKey := fmt.Sprintf("%v.pos", uuid)
-
-	c.Warningf("UUID %s", uuid)
-	c.Warningf("pos key %s", posKey)
 
 	var pos Position
 
