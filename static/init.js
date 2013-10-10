@@ -5,7 +5,8 @@ var view = {};  // maps UUIDS to UI elements
 var moves = 0;
 // Every moveThreshold-th move will be sent to the server.
 // Set to 1 to send each move to the server or higher than 1 to skip moves.
-var moveThreshold = 2;
+var moveThreshold = 20;
+var notifyThreshold = 3;
 
 $(function() {
 	var stage = new Kinetic.Stage({
@@ -48,6 +49,7 @@ $(function() {
 				
 			registerKeyEvents(move, circle);
 			setupChannelApi(response.ChannelToken, layer);
+			addPlayers(response.Players, layer);
 		}
 	});
 });

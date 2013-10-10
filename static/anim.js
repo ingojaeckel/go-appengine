@@ -1,8 +1,4 @@
 function move(circle, direction) {
-	if (moves++ % moveThreshold != 0) {
-		return; // skip this move
-	}
-	
 	const speed = 5.0;
 	
 	if ("r" == direction) {
@@ -17,7 +13,23 @@ function move(circle, direction) {
 	
 	circle.getLayer().draw();
 	
-	$.ajax({url: "/rest/move/" + uuid + "/" + circle.getX() + "/" + circle.getY()})
+	moves++;
+	
+	if (moves % moveThreshold == 0) {
+		// Don't send every move to the server.
+		$.get("/rest/move/" + uuid + "/" + circle.getX() + "/" + circle.getY() + "/");
+	} else if (moves % notifyThreshold == 0) {
+		$.ajax({
+			url: "/rest/notify",
+			type: "POST",
+			data: JSON.stringify({
+				ID: uuid,
+				X: circle.getX(),
+				Y: circle.getY(),
+				Recipients: ["player1", "player2", "player3"]
+			})			
+		});
+	}
 }
 
 function registerKeyEvents(moveFn, circle) {
@@ -39,93 +51,81 @@ function registerKeyEvents(moveFn, circle) {
 	});
 }
 
-function pollInTheBackground(layer) {
-	// console.log("pollInTheBackground");
-	
-	setTimeout(function() {
-		poll(layer);
-		pollInTheBackground(layer);
-	}, 200);
+function addPlayers(players, layer) {
+	for (var i=0; i<players.length; i++) {
+		updatePlayer(players[i], layer);
+	}
 }
 
-function poll(layer) {
-	// console.log("poll");
-	$.ajax({
-		url: "/rest/poll",
-		dataType: "json",
-		success: function(response) {
-			for (var i=0; i<response.Players.length; i++) {
-				if (uuid == response.Players[i].ID) {
-					continue; // don't draw yourself
-				}
-				
-				// Create/Update model for this player
-				model[response.Players[i].ID] = response.Players[i];
-				
-				if (view[response.Players[i].ID]) {
-					// We alreay know this player. Update view.
-					view[response.Players[i].ID].setX(response.Players[i].P.X);
-					view[response.Players[i].ID].setY(response.Players[i].P.Y);
-					// console.log("updated player " + response.Players[i].ID);
-				} else {
-					// We don't know this player yet. Create view.
-					var newCircle = new Kinetic.Circle({
-						x: response.Players[i].P.X,
-						y: response.Players[i].P.Y,
-						radius: 10,
-						fill: 'black',
-						stroke: 'black',
-						strokeWidth: 2
-					});
-					view[response.Players[i].ID] = newCircle;
-					layer.add(newCircle);
-					// console.log("created player " + response.Players[i].ID);						
-				}
-			}
-			layer.draw();
-		}
-	});
+function updatePlayer(player, layer) {
+	if (uuid == player.ID) {
+		return; // don't update yourself.
+	}
+	
+	model[player.ID] = player;
+	
+	if (view[player.ID]) {
+		// We alreay know this player. Update view.
+		view[player.ID].setX(player.P.X);
+		view[player.ID].setY(player.P.Y);
+	} else {
+		// We don't know this player yet. Create view.
+		var newCircle = new Kinetic.Circle({
+			x: player.P.X,
+			y: player.P.Y,
+			radius: 10,
+			fill: 'black',
+			stroke: 'black',
+			strokeWidth: 2
+		});
+		view[player.ID] = newCircle;
+		layer.add(newCircle);
+		updatePlayerList();
+	}
+	
+	layer.draw();
+}
+
+function updatePlayerList() {
+	$("#players").empty();
+	
+	var html = "";
+	
+	for (var key in model) {
+		html += "<li>" + model[key].ID + " " + model[key].Name + "</li>";
+	}
+	
+	$("#players").append("<ol>" + html + "</ol>");
 }
 
 function setupChannelApi(token, layer) {
-	console.log("setupChannelApi " + token);
 	var channel = new goog.appengine.Channel(token);
 	channel.open({
 		'onopen': function() {
 			console.log("opened");
 		},
 		'onmessage': function(message) {
-			var p = JSON.parse(message.data);
+			console.log("onmessage");
 			
-			if (uuid == p.ID) {
-				return; // don't draw yourself
-			}
+			// Unmarshal channel message
+			var data = JSON.parse(message.data);
 			
-			// Create/Update model for this player
-			model[p.ID] = p;
-			
-			if (view[p.ID]) {
-				// We alreay know this player. Update view.
-				view[p.ID].setX(p.P.X);
-				view[p.ID].setY(p.P.Y);
-				// console.log("updated player " + p.ID);
+			if (0 == data[0]) {
+				// add player
+				var player = { ID: data[1], P: { X: 100, Y: 100 } };
+				updatePlayer(player, layer)				
+			} else if (1 == data[0]) {
+				// remove player
+				delete model[data[1]];
+				if (view[data[1]] != null) {
+					view[data[1]].remove();
+					layer.draw();
+					updatePlayerList();
+				}
 			} else {
-				// We don't know this player yet. Create view.
-				var newCircle = new Kinetic.Circle({
-					x: p.P.X,
-					y: p.P.Y,
-					radius: 10,
-					fill: 'black',
-					stroke: 'black',
-					strokeWidth: 2
-				});
-				view[p.ID] = newCircle;
-				layer.add(newCircle);
-				// console.log("created player " + p.ID);						
-			}
-			
-			layer.draw();
-			// console.log("message " + message);			
+				var player = { ID: data[0], P: { X: data[1], Y: data[2] } };
+				updatePlayer(player, layer)
+			}			
 		},
 		'onerror': function(error) {
 			console.log("error");
